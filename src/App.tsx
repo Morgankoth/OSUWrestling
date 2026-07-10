@@ -131,6 +131,7 @@ const CSS = `
   button { font-family: inherit; cursor: pointer; border: none; background: none; }
   ::-webkit-scrollbar { width: 6px; }
   ::-webkit-scrollbar-thumb { background: ${C.line}; border-radius: 99px; }
+  @keyframes sheetUp { from { transform: translateY(24px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 `;
 
 
@@ -215,25 +216,133 @@ function Ring({ value, size = 88 }) {
   );
 }
 
-function DomainBar({ label, p }) {
+function domainTrend(current, seed) {
+  const s = (n) => ((seed * 7919 + n * 3571) % 100000) / 100000;
+  const weeks = ["W-11","W-10","W-9","W-8","W-7","W-6","W-5","W-4","W-3","W-2","W-1","Now"];
+  let v = current - 10;
+  return weeks.map((w, i) => {
+    const drift = (i / (weeks.length - 1)) * 10;
+    const wobble = (s(i) - 0.5) * 9;
+    v = Math.max(35, Math.min(99, current - 10 + drift + wobble));
+    return { w, v: i === weeks.length - 1 ? current : Math.round(v) };
+  });
+}
+
+const DOMAIN_NOTES = {
+  Metabolic:      { unit: "score", desc: "Glucose regulation, lipid panel, and resting metabolic efficiency." },
+  Inflammatory:   { unit: "score", desc: "CRP, cytokine markers, and systemic inflammatory load." },
+  Hormonal:       { unit: "score", desc: "Testosterone, cortisol rhythm, and anabolic/catabolic balance." },
+  Cardiovascular: { unit: "score", desc: "Resting HR, HRV baseline, and cardiac efficiency markers." },
+  Endocrine:      { unit: "score", desc: "Thyroid function, IGF-1, and broader endocrine regulation." },
+};
+
+function DomainBar({ label, p, onClick }) {
   const color = sc(p);
   return (
-    <div>
+    <button onClick={onClick} style={{
+      width: "100%", textAlign: "left", padding: "6px 0",
+      display: "block", borderRadius: 6,
+    }}>
       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
-        <Mono style={{ fontSize: 10.5, color: C.muted }}>{label}</Mono>
-        <Mono style={{ fontSize: 10.5, color }}>{p}th</Mono>
+        <span style={{ fontSize: 12, color: C.muted }}>{label}</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+          <Mono style={{ fontSize: 10.5, color }}>{p}th</Mono>
+          <ChevronRight size={12} color={C.faint} />
+        </div>
       </div>
       <div style={{ background: C.surfaceHi, borderRadius: 99, height: 5 }}>
         <div style={{ width: `${p}%`, background: color, borderRadius: 99, height: 5, transition: "width .5s ease" }} />
+      </div>
+    </button>
+  );
+}
+
+function DomainDetailSheet({ domain, athlete, onClose }) {
+  const trend = domainTrend(domain.p, athlete.id + domain.k.length);
+  const color = sc(domain.p);
+  const delta = trend[trend.length - 1].v - trend[0].v;
+  const note = DOMAIN_NOTES[domain.k] || { desc: "" };
+
+  return (
+    <div onClick={onClose} style={{
+      position: "fixed", inset: 0, background: "rgba(6,9,18,0.72)",
+      display: "flex", alignItems: "flex-end", zIndex: 50,
+    }}>
+      <div onClick={e => e.stopPropagation()} style={{
+        width: "100%", maxWidth: 520, margin: "0 auto",
+        background: C.surface, borderTop: `1px solid ${C.lineHi}`,
+        borderRadius: "20px 20px 0 0", padding: "18px 18px 28px",
+        animation: "sheetUp .22s ease",
+      }}>
+        <div style={{ width: 36, height: 4, borderRadius: 99, background: C.line, margin: "0 auto 16px" }} />
+
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
+          <div>
+            <Mono style={{ fontSize: 9.5, color: C.brand, letterSpacing: ".1em", textTransform: "uppercase", display: "block", marginBottom: 4 }}>
+              Biomarker domain
+            </Mono>
+            <div style={{ fontSize: 19, fontWeight: 700, color: C.text }}>{domain.k}</div>
+          </div>
+          <button onClick={onClose} style={{
+            width: 30, height: 30, borderRadius: 8, background: C.surfaceHi,
+            border: `1px solid ${C.line}`, color: C.muted, fontSize: 16, lineHeight: 1,
+          }}>×</button>
+        </div>
+
+        <p style={{ fontSize: 12.5, color: C.muted, lineHeight: 1.5, margin: "8px 0 16px" }}>{note.desc}</p>
+
+        <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
+          <div style={{ flex: 1, background: C.surfaceHi, border: `1px solid ${C.line}`, borderRadius: 12, padding: "12px 14px" }}>
+            <Mono style={{ fontSize: 9, color: C.faint, display: "block", marginBottom: 4 }}>CURRENT</Mono>
+            <div style={{ fontSize: 24, fontWeight: 700, color }}>{domain.p}<span style={{ fontSize: 11, color: C.faint }}>th</span></div>
+          </div>
+          <div style={{ flex: 1, background: C.surfaceHi, border: `1px solid ${C.line}`, borderRadius: 12, padding: "12px 14px" }}>
+            <Mono style={{ fontSize: 9, color: C.faint, display: "block", marginBottom: 4 }}>12-WEEK CHANGE</Mono>
+            <div style={{ fontSize: 24, fontWeight: 700, color: delta >= 0 ? C.jade : C.coral }}>
+              {delta >= 0 ? "+" : ""}{delta}
+            </div>
+          </div>
+        </div>
+
+        <Mono style={{ fontSize: 9.5, color: C.brand, letterSpacing: ".1em", textTransform: "uppercase", display: "block", marginBottom: 10 }}>
+          12-week trend
+        </Mono>
+        <div style={{ height: 140, marginBottom: 4 }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <ComposedChart data={trend} margin={{ top: 4, right: 4, bottom: 0, left: -28 }}>
+              <XAxis dataKey="w" interval={1}
+                tick={{ fill: C.faint, fontSize: 8.5, fontFamily: "'IBM Plex Mono',monospace" }}
+                axisLine={false} tickLine={false} />
+              <YAxis domain={[30, 100]}
+                tick={{ fill: C.faint, fontSize: 8.5, fontFamily: "'IBM Plex Mono',monospace" }}
+                axisLine={false} tickLine={false} />
+              <Tooltip contentStyle={{ background: C.surface, border: `1px solid ${C.lineHi}`, borderRadius: 8, fontSize: 11 }}
+                labelStyle={{ color: C.muted }} />
+              <Area type="monotone" dataKey="v" stroke="none" fill={color} fillOpacity={0.12} />
+              <Line type="monotone" dataKey="v" stroke={color} strokeWidth={2.5} dot={{ fill: color, r: 3 }} />
+            </ComposedChart>
+          </ResponsiveContainer>
+        </div>
+
+        <Mono style={{ fontSize: 9, color: C.faint, display: "block", marginTop: 8, lineHeight: 1.6 }}>
+          Demonstration profile · synthetic physiological data · Velocity Health
+        </Mono>
       </div>
     </div>
   );
 }
 
-function RosterScreen({ week, setWeek, onSelect }) {
+function RosterScreen({ week, setWeek, onSelect, filter, setFilter }) {
   const greenCount = ROSTER.filter(a => a.readiness >= 80).length;
   const warnCount  = ROSTER.filter(a => a.readiness >= 65 && a.readiness < 80).length;
   const riskCount  = ROSTER.filter(a => a.readiness < 65).length;
+
+  const filtered = ROSTER.filter(a => {
+    if (filter === "ready")   return a.readiness >= 80;
+    if (filter === "monitor") return a.readiness >= 65 && a.readiness < 80;
+    if (filter === "reduce")  return a.readiness < 65;
+    return true;
+  });
 
   return (
     <div style={{ maxWidth: 520, margin: "0 auto", padding: "0 0 32px" }}>
@@ -246,18 +355,31 @@ function RosterScreen({ week, setWeek, onSelect }) {
         <Mono style={{ fontSize: 11, color: C.muted }}>2025–26 Roster · Coach View</Mono>
         <div style={{ display: "flex", gap: 8, marginTop: 16, flexWrap: "wrap" }}>
           {[
-            { label: "Ready",   count: greenCount, color: C.jade },
-            { label: "Monitor", count: warnCount,  color: C.amber },
-            { label: "Reduce",  count: riskCount,  color: C.coral },
-          ].map(({ label, count, color }) => (
-            <div key={label} style={{
-              display: "flex", alignItems: "center", gap: 6, padding: "6px 12px",
-              background: `${color}14`, border: `1px solid ${color}44`, borderRadius: 99,
+            { id: "ready",   label: "Ready",   count: greenCount, color: C.jade },
+            { id: "monitor", label: "Monitor", count: warnCount,  color: C.amber },
+            { id: "reduce",  label: "Reduce",  count: riskCount,  color: C.coral },
+          ].map(({ id, label, count, color }) => {
+            const on = filter === id;
+            return (
+              <button key={id} onClick={() => setFilter(on ? "all" : id)} style={{
+                display: "flex", alignItems: "center", gap: 6, padding: "6px 12px",
+                background: on ? `${color}30` : `${color}14`,
+                border: `1px solid ${on ? color : `${color}44`}`, borderRadius: 99,
+                transition: "all .15s ease",
+              }}>
+                <div style={{ width: 7, height: 7, borderRadius: "50%", background: color }} />
+                <Mono style={{ fontSize: 10.5, color }}>{count} {label}</Mono>
+              </button>
+            );
+          })}
+          {filter !== "all" && (
+            <button onClick={() => setFilter("all")} style={{
+              display: "flex", alignItems: "center", padding: "6px 12px",
+              background: C.surfaceHi, border: `1px solid ${C.line}`, borderRadius: 99,
             }}>
-              <div style={{ width: 7, height: 7, borderRadius: "50%", background: color }} />
-              <Mono style={{ fontSize: 10.5, color }}>{count} {label}</Mono>
-            </div>
-          ))}
+              <Mono style={{ fontSize: 10.5, color: C.faint }}>Clear</Mono>
+            </button>
+          )}
         </div>
       </div>
 
@@ -286,7 +408,12 @@ function RosterScreen({ week, setWeek, onSelect }) {
       </div>
 
       <div style={{ padding: "8px 20px 0", display: "flex", flexDirection: "column", gap: 8 }}>
-        {ROSTER.map(a => {
+        {filtered.length === 0 && (
+          <div style={{ textAlign: "center", padding: "24px 0" }}>
+            <Mono style={{ fontSize: 11, color: C.faint }}>No athletes in this group.</Mono>
+          </div>
+        )}
+        {filtered.map(a => {
           const color = sc(a.readiness);
           return (
             <button key={a.id} onClick={() => onSelect(a.id)} style={{
@@ -332,6 +459,7 @@ function RosterScreen({ week, setWeek, onSelect }) {
 function AthleteScreen({ athlete: A, week, onBack }) {
   const traj = makeTraj(A.readiness, week);
   const isConcern = week === "concern";
+  const [openDomain, setOpenDomain] = useState(null);
 
   return (
     <div style={{ maxWidth: 520, margin: "0 auto", paddingBottom: 48 }}>
@@ -509,8 +637,8 @@ function AthleteScreen({ athlete: A, week, onBack }) {
                          textTransform: "uppercase", display: "block", marginBottom: 14 }}>
             Biomarker domains · current panel
           </Mono>
-          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            {A.domains.map(d => <DomainBar key={d.k} label={d.k} p={d.p} />)}
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            {A.domains.map(d => <DomainBar key={d.k} label={d.k} p={d.p} onClick={() => setOpenDomain(d)} />)}
           </div>
         </div>
 
@@ -604,6 +732,10 @@ function AthleteScreen({ athlete: A, week, onBack }) {
           </Mono>
         </div>
       </div>
+
+      {openDomain && (
+        <DomainDetailSheet domain={openDomain} athlete={A} onClose={() => setOpenDomain(null)} />
+      )}
     </div>
   );
 }
@@ -611,6 +743,7 @@ function AthleteScreen({ athlete: A, week, onBack }) {
 export default function App() {
   const [selectedId, setSelectedId] = useState(null);
   const [week, setWeek] = useState("concern");
+  const [filter, setFilter] = useState("all");
   const selected = ROSTER.find(r => r.id === selectedId);
 
   return (
@@ -619,7 +752,7 @@ export default function App() {
       <div style={{ minHeight: "100vh", background: C.ground }}>
         {selected
           ? <AthleteScreen athlete={selected} week={week} onBack={() => setSelectedId(null)} />
-          : <RosterScreen week={week} setWeek={setWeek} onSelect={setSelectedId} />
+          : <RosterScreen week={week} setWeek={setWeek} onSelect={setSelectedId} filter={filter} setFilter={setFilter} />
         }
       </div>
     </>
